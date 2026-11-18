@@ -101,6 +101,10 @@ def main() -> None:
         '--mdns-timeout', type=int, default=3,
         help='mDNS scan timeout in seconds'
     )
+    parser.add_argument(
+        '--reboot-wait', type=int, default=2,
+        help='Time to wait for devices to restart'
+    )
     args = parser.parse_args()
 
     devices = scan(args.mdns_timeout)
@@ -110,6 +114,13 @@ def main() -> None:
             reboot_device(device)
             if args.delay and device != devices[-1]:
                 time.sleep(args.delay)
+
+        time.sleep(args.reboot_wait)
+        devices_post_reboot = scan(args.mdns_timeout)
+        if len(devices_post_reboot) != len(devices):
+            print('Device list missmatch')
+            print(f'prior to reboot: {devices}')
+            print(f'after reboot: {devices_post_reboot}')
     else:
         print('No devices found.')
 
