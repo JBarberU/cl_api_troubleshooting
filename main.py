@@ -1,11 +1,12 @@
-"""Scan for devices via mDNS, pick one, send a raw command and read the reply.
+'''Scan for devices via mDNS and send a reboot command to each device.
 
 Usage:
     uv run main.py
-"""
+'''
 
 import socket
 import time
+import argparse
 
 from zeroconf import (
     IPVersion,
@@ -14,13 +15,13 @@ from zeroconf import (
     ServiceListener,
     Zeroconf,
 )
+import sys
 
-SERVICE_TYPE = "_kv-command-api._tcp.local."
-SCAN_SECONDS = 3
+SERVICE_TYPE = '_kv-command-api._tcp.local.'
 
 
-def scan() -> list[tuple[str, str, int]]:
-    """Return a list of (name, address, port) for every device found."""
+def scan(timeout: int) -> list[tuple[str, str, int]]:
+    '''Return a list of (name, address, port) for every device found.'''
     zc = Zeroconf(interfaces=InterfaceChoice.All, ip_version=IPVersion.All)
     names: list[str] = []
 
@@ -29,8 +30,14 @@ def scan() -> list[tuple[str, str, int]]:
             names.append(name)
 
     ServiceBrowser(zc, SERVICE_TYPE, Listener())
-    print(f"Scanning for {SERVICE_TYPE} ({SCAN_SECONDS}s) ...")
-    time.sleep(SCAN_SECONDS)
+
+    sys.stdout.write('Scanning for devices')
+    for _ in range(0, timeout):
+        sys.stdout.write('.')
+        sys.stdout.flush()
+        time.sleep(1)
+
+    sys.stdout.write('\n')
 
     devices = []
     for name in names:
@@ -42,27 +49,15 @@ def scan() -> list[tuple[str, str, int]]:
     return devices
 
 
-def select(devices: list[tuple[str, str, int]]) -> tuple[str, int]:
-    for i, (name, addr, port) in enumerate(devices):
-        print(f"  [{i}] {name}  {addr}:{port}")
-    i = int(input("Select device: ")) if len(devices) > 1 else 0
-    _, addr, port = devices[i]
-    return addr, port
-
-
 def recv(sock: socket.socket, n: int) -> bytes:
-    """Read exactly n bytes from the socket."""
-    data = b""
+    '''Read exactly n bytes from the socket.'''
+    data = b''
     while len(data) < n:
         chunk = sock.recv(n - len(data))
         if not chunk:
-            raise ConnectionError(f"expected {n} bytes, got {len(data)}")
+            raise ConnectionError(f'expected {n} bytes, got {len(data)}')
         data += chunk
     return data
-
-
-def u16(b: bytes) -> int:
-    return int.from_bytes(b, "little")
 
 
 def make_packet(command: int, payload):
@@ -73,44 +68,50 @@ def make_packet(command: int, payload):
     )
 
 
-def main() -> None:
-    devices = scan()
-    if not devices:
-        print("No devices found.")
-        return
-    host, port = select(devices)
-
+def reboot_device(device: tuple[str, str, int]):
     payload = make_packet(
         47,  # reboot command
         bytes([0, 0, 0, 0])
     )
 
-    print(f'host: {host}, port: {port}')
-
-# -    print(f"Connecting to {host}:{port} ...")
-# -    sock = socket.create_connection((host, port), timeout=10)
-# -    sock.settimeout(None)
-# -    print("Connected. Type /help for input formats.\n")
+    name, host, port = device
 
     with socket.create_connection((host, port), timeout=10) as sock:
         sock.sendall(payload)
-        print(f"Sent:     {list(payload)}")
-
         header = recv(sock, 4)
-        command = int.from_bytes(header[0:2], 'little')
-        payload_len = int.from_bytes(header[2:], 'little')
-        payload = recv(sock, payload_len)
-        print("Received:")
-        print(f"  command: {command}")
-        print(f"  payload_length: {payload_len}")
-        print(f"  payload: {payload}")
+        in_payload_len = int.from_bytes(header[2:], 'little')
+        in_payload = recv(sock, in_payload_len)
 
-    status = int.from_bytes(payload, 'little')
+    status = int.from_bytes(in_payload, 'little')
+
     if status == 0:
-        print("Reboot ok")
+        print(f'[{name}]: Reboot command successfully sent!')
     else:
-        print(f"Reboot failed with error: {status}")
+        print(f'[{name}]: Reboot command failed with error: {status}')
 
 
-if __name__ == "__main__":
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--delay', type=int, default=0,
+        help='Delay between devices in seconds'
+    )
+    parser.add_argument(
+        '--mdns-timeout', type=int, default=3,
+        help='mDNS scan timeout in seconds'
+    )
+    args = parser.parse_args()
+
+    devices = scan(args.mdns_timeout)
+
+    if devices:
+        for device in devices:
+            reboot_device(device)
+            if args.delay and device != devices[-1]:
+                time.sleep(args.delay)
+    else:
+        print('No devices found.')
+
+
+if __name__ == '__main__':
     main()
