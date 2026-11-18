@@ -80,11 +80,12 @@ def reboot_device(device: tuple[str, str, int]):
         sock.sendall(payload)
         header = recv(sock, 4)
         in_payload_len = int.from_bytes(header[2:], 'little')
+        command = int.from_bytes(header[0:2], 'little')
         in_payload = recv(sock, in_payload_len)
 
     status = int.from_bytes(in_payload, 'little')
 
-    if status == 0:
+    if command == 48 and status == 0:
         print(f'[{name}]: Reboot command successfully sent!')
     else:
         print(f'[{name}]: Reboot command failed with error: {status}')
