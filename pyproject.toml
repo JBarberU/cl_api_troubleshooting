@@ -1,7 +1,7 @@
 [project]
 name = "raw-cmd"
 version = "0.1.0"
-description = "Discover _my-fun-api._tcp services via mDNS and send/receive raw bytes"
+description = "Script for rebooting Arcus devices"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
