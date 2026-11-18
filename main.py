@@ -105,24 +105,36 @@ def main() -> None:
         '--reboot-wait', type=int, default=2,
         help='Time to wait for devices to restart'
     )
+    parser.add_argument(
+        '--repeats', type=int, default=1,
+        help='Repeat the reboot x times'
+    )
+    parser.add_argument(
+        '--quit-on-error', action='store_true',
+        help='Stop if error is detected'
+    )
     args = parser.parse_args()
 
     devices = scan(args.mdns_timeout)
+    for _ in range(args.repeats):
+        if devices:
+            for device in devices:
+                reboot_device(device)
+                if args.delay and device != devices[-1]:
+                    time.sleep(args.delay)
 
-    if devices:
-        for device in devices:
-            reboot_device(device)
-            if args.delay and device != devices[-1]:
-                time.sleep(args.delay)
+            time.sleep(args.reboot_wait)
+            devices_post_reboot = scan(args.mdns_timeout)
+            if len(devices_post_reboot) != len(devices):
+                print('Device list missmatch')
+                print(f'prior to reboot: {devices}')
+                print(f'after reboot: {devices_post_reboot}')
+                if args.quit_on_error:
+                    sys.exit(1)
 
-        time.sleep(args.reboot_wait)
-        devices_post_reboot = scan(args.mdns_timeout)
-        if len(devices_post_reboot) != len(devices):
-            print('Device list missmatch')
-            print(f'prior to reboot: {devices}')
-            print(f'after reboot: {devices_post_reboot}')
-    else:
-        print('No devices found.')
+            devices = devices_post_reboot
+        else:
+            print('No devices found.')
 
 
 if __name__ == '__main__':
